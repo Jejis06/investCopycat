@@ -1,5 +1,7 @@
+import re
 import yfinance as yf
 from datetime import datetime, timedelta
+import json
 
 
 
@@ -16,3 +18,8 @@ def deltaprice(start, end, stock):
     print('current',df['Close'].iloc[-1])
     print('last',df["Close"].iloc[0])
 
+
+def read():
+    with open("d.json", "r") as f:
+        print(json.load(f))
+read()

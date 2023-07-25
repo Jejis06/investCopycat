@@ -3,6 +3,7 @@ import json
 import os
 from datetime import datetime
 import time
+from requests.models import requote_uri
 import yfinance as yf
 import copy
 
@@ -22,10 +23,42 @@ def make_hash(o):
   return hash(tuple(frozenset(sorted(new_o.items()))))
 
 
+SAVE_FILE = "db.json"
 
 
 class Trader:
+    def save(self):
+        save = {
+                "balance" : self.balance,
+                "hashedHoldings" : self.hashedHoldings,
+                "holdings" : self.holdings,
+                "holdingsNames" : self.holdingsOnlyNames
+        }
+
+        with open(SAVE_FILE, 'w') as f:
+            json.dump(save, f, indent=6)
+            f.close()
+
+        return
+
+    def load(self):
+        try:
+            with open(SAVE_FILE, "r") as f:
+                save = json.load(f)
+                f.close()
+        except: return
+
+        self.balance = save["balance"] 
+        self.hashedHoldings = save["hashedHoldings"] 
+        self.holdings = save["holdings"] 
+        self.holdingsOnlyNames = save["holdingsNames"] 
+
+        return
+        
     def __init__(self):
+
+        # balance to test trades in usd 
+        self.balance = 1000
 
         # url values
         self.baseUrl = "https://bff.capitoltrades.com/trades?sortBy=-pubDate"
@@ -88,10 +121,17 @@ class Trader:
         # what level of evaluation is accepted
         self.ACCEPTANCE_LEVEL = 2
 
+        # max time allowed between purnchase and today
+        self.maxAvgDtime = 60
 
         # safechecks
         self.ACCEPTANCE_LEVEL = self.ACCEPTANCE_LEVEL % (self.VALUE_TABLE_SIZE + 1)
+
+        self.load()
         return
+
+    def stockPrice(self, stock):
+        return int(yf.Ticker(stock).info['currentPrice'])
 
     def getHistoricalGain(self, start, end, stock):
 
@@ -149,21 +189,23 @@ class Trader:
                 "generalEval" : {"str" : generalEvalStr, "int" : generalEvalInt} 
 
         }
+        print(tradeEval)
 
         tradeHash = make_hash(trade)
 
-        if (generalEvalInt >= self.ACCEPTANCE_LEVEL) or (gain * 100 < 0): return 1
+        if (generalEvalInt > self.ACCEPTANCE_LEVEL) or (gain * 100 < 0): return 1
         if tradeHash in self.hashedHoldings: return -1
 
 
 
         if (txType == 'sell') and (ticker in self.holdingsOnlyNames):
-            self.bet.append((trade, tradeEval))
+            self.bet.append((trade, (tradeEval, tradeHash)))
             
-        if txType == 'buy':
-            self.bet.append((trade, tradeEval))
+        if (txType == 'buy') and (ticker not in self.holdingsOnlyNames):
+            self.bet.append((trade, (tradeEval, tradeHash)))
 
-        return 1
+
+        return 2
 
 
         
@@ -175,10 +217,12 @@ class Trader:
 
         obj = json.loads(res.content.decode('utf-8'))
         if ammPages: 
-            return int(obj["meta"]["paging"]["totalPages"])
+            return (int(obj["meta"]["paging"]["totalPages"]),0.1)
 
         # parse by date
         now = datetime.now()
+        avgDtime = 0
+
         for pitch in obj["data"]:
             if pitch['asset']['assetType'] == 'stock':
 
@@ -194,41 +238,138 @@ class Trader:
                 except: continue
 
                 dTime = (now - txDate).days
+                avgDtime += dTime
 
-                print(dTime)
-                
+                print("Dtime : ", dTime)
                 print(f"{ticker} -- {issuer} : {txType}")
                 print(dTime, "days")
                 print(f"Gain {gain:.1%}")
                 print(f"price {value} | owner {owner}")
                 print(f"By : {politician}")
                 flag = self.tradeOrganizer(dTime, txDate, ticker, issuer, txType, politician, value, owner, gain)
+
+                if flag > 1: print("\t\tAccepted")
+                else: print("Rejected")
+
                 print()
 
                 if flag < 0:
                    print('[ALL NEW DATA SCRAPED]')
-                   return 1 
-        
-        return -1
+                   return (1, avgDtime/len(obj['data'])) 
 
+        return (-1, avgDtime/len(obj['data'])) 
+
+    def pitch(self):
+        # Dummy function to ask user if trades are acceptable
+        # Returns how much pitches have been accepted by user 
+        # (for now everything is accepted)
+
+        self.txQueue += self.bet
+        self.bet.clear()
+        return len(self.txQueue) 
+
+
+    def classifyAmm(self, invested):
+        classified = 100
+
+        if invested < 1_000:
+            classified = 10
+        elif invested < 15_000:
+            classified = 20
+        elif invested < 50_000:
+            classified = 30
+        elif invested < 100_000:
+            classified = 40
+        elif invested < 250_000:
+            classified = 40
+        elif invested < 500_000:
+            classified = 50
+        elif invested < 1_000_000:
+            classified = 60
+        elif invested < 5_000_000:
+            classified = 70
+        elif invested < 25_000_000:
+            classified = 80
+        elif invested < 50_000_000:
+            classified = 90
+
+        return classified/100
+
+    def buyStock(self, transaction):
+
+        if self.balance <= 0: return
+        #self.holdingsOnlyNames
+
+        stock = transaction[0]['ticker']
+        price = self.stockPrice(stock)
+
+        if stock in self.holdingsOnlyNames: return
+
+        budget = self.balance * self.classifyAmm(transaction[0]['value'])
+        ammBought = budget / price
+        self.balance -= budget
+
+        print(f"[BUY] Stock: {stock} bought for {budget} | balance before: {self.balance+budget} | balance after: {self.balance}")
+        self.holdings.append({
+            "stock" : stock,
+            "ammBought": ammBought
+        })
+        self.holdingsOnlyNames.append(stock)
+        self.hashedHoldings.append(transaction[1][1])
+
+        return
+
+    def sellStock(self, transaction):
+        stock = transaction[0]['ticker']
+        price = self.stockPrice(stock)
+
+        for i in self.holdings.copy():
+            if i['stock'] == stock:
+                gained = price * i['ammBought']
+                self.balance += gained
+
+                print(f"[SELL] Stock: {stock} sold for {gained} | balance before: {self.balance-gained} | balance after: {self.balance}")
+
+                self.holdings.pop(self.holdings.index(i))
+                self.holdingsOnlyNames.pop(self.holdingsOnlyNames.index(stock))
+                break
+
+
+        return
+
+    def commitTransactions(self):
+        print(len(self.txQueue))
+        for transaction in self.txQueue:
+            if transaction[0]['txType'] == 'buy': 
+                self.buyStock(transaction)
+            else: 
+                self.sellStock(transaction)
+        self.txQueue.clear()
+
+        return
 
     def scrape(self):
-        ammPages = self.getData(1, ammPages=True)
-        print(ammPages)
+        ammPages = self.getData(1, ammPages=True)[0]
+        ammPages = 50
         for i in range(1,ammPages):
-            print("\t\t",i)
-            self.getData(i)
 
 
-        print(self.bet)
-        print(len(self.bet))
+            res = self.getData(i)
+            print(f"\t\tPage : {i} / avgDtime : {res[1]}")
+
+            if res[0] > 0 or res[1] >= self.maxAvgDtime: break
+             
+
+        if len(self.bet) > 0: self.pitch()
+        print("commiting transactions : ")
+        self.commitTransactions()
+        print("saving")
+        self.save()
 
 
     def test(self):
         self.scrape()
         return
-
-
 
 
 def main():
