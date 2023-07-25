@@ -1,26 +1,18 @@
 import yfinance as yf
-import datetime
-
-tickerSymbol = 'AMD'
-
-tickerData = yf.Ticker(tickerSymbol)
-todayData = tickerData.info['currentPrice']
-
-s = datetime.datetime.now() 
-e = s
-
-delta = datetime.timedelta(days = 30)
-
-s -= delta
-e -= delta - datetime.timedelta(days=1)
-
-s = s.strftime('%Y-%m-%d')
-e = e.strftime('%Y-%m-%d')
-
-# dataBack = tickerData.history(start=s,end=e)
-dataBack = tickerData.history(period='1y')
+from datetime import datetime, timedelta
 
 
-print(dataBack)
-print(todayData) 
+
+
+def deltaprice(start, end, stock):
+    ticker = yf.Ticker('TSLA')
+
+    start = start.strftime('%Y-%m-%d') 
+    end = end.strftime('%Y-%m-%d') 
+
+    df = ticker.history(interval='1d', start = start, end = end)
+
+
+    print('current',df['Close'].iloc[-1])
+    print('last',df["Close"].iloc[0])
 
