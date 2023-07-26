@@ -2,10 +2,11 @@ import requests as rq
 import json
 import os
 from datetime import datetime
-import time
 from requests.models import requote_uri
 import yfinance as yf
 import copy
+import time
+import schedule
 
 def make_hash(o):
   if isinstance(o, (set, tuple, list)):
@@ -367,15 +368,24 @@ class Trader:
         self.save()
 
 
+    def timedRun(self, time):
+        schedule.every().day.at(time).do(self.scrape)
+
+        while True:
+            schedule.run_pending()
+            time.sleep(1)
+
+
     def test(self):
         self.scrape()
         return
 
 
+
 def main():
     os.system("clear")
     tr = Trader()
-    tr.test()
+    tr.timedRun("10:00")
 
     return
 
