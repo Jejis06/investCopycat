@@ -2,11 +2,10 @@ import requests as rq
 import json
 import os
 from datetime import datetime
-from requests.models import requote_uri
 import yfinance as yf
 import copy
-import time
 import schedule
+
 
 def make_hash(o):
   if isinstance(o, (set, tuple, list)):
