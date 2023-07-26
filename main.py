@@ -366,6 +366,7 @@ class Trader:
         self.commitTransactions()
         print("saving")
         self.save()
+        print(f"TODAYS BALANCE {self.balance}")
 
 
     def timedRun(self, time):
