@@ -5,6 +5,7 @@ from datetime import datetime
 import yfinance as yf
 import copy
 import schedule
+import time 
 
 
 def make_hash(o):
@@ -368,8 +369,8 @@ class Trader:
         print(f"TODAYS BALANCE {self.balance}")
 
 
-    def timedRun(self, time):
-        schedule.every().day.at(time).do(self.scrape)
+    def timedRun(self, runTime):
+        schedule.every().day.at(runTime).do(self.scrape)
 
         while True:
             schedule.run_pending()
