@@ -213,7 +213,9 @@ class Trader:
 
     def getData(self, pageId, ammPages = False):
         url = f"{self.baseUrl}{self.sep}{self.spage}{pageId}{self.sep}{self.txTypeBuy}{self.sep}{self.txTypeSell}"
-        res = rq.get(url)
+
+        try: res = rq.get(url)
+        except: return (1, 0.1)
 
 
         obj = json.loads(res.content.decode('utf-8'))
