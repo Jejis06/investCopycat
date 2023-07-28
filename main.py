@@ -49,7 +49,8 @@ class Trader:
             with open(SAVE_FILE, "r") as f:
                 save = json.load(f)
                 f.close()
-        except: return
+        except: 
+            print("err cant load db"); return
 
         self.balance = save["balance"] 
         self.hashedHoldings = save["hashedHoldings"] 
@@ -129,6 +130,9 @@ class Trader:
 
         # max time allowed between purnchase and today
         self.maxAvgDtime = 60
+
+        # minimum pages to go through
+        self.minPages = 3
 
         # safechecks
         self.ACCEPTANCE_LEVEL = self.ACCEPTANCE_LEVEL % (self.VALUE_TABLE_SIZE + 1)
@@ -220,7 +224,7 @@ class Trader:
         url = f"{self.baseUrl}{self.sep}{self.spage}{pageId}{self.sep}{self.txTypeBuy}{self.sep}{self.txTypeSell}"
 
         try: res = rq.get(url)
-        except: return (1, 0.1)
+        except: print('err cant get data');return (1, 0.1)
 
 
         obj = json.loads(res.content.decode('utf-8'))
@@ -243,7 +247,7 @@ class Trader:
                 owner = pitch['owner'] # spouse, child
 
                 try: gain = self.getHistoricalGain(txDate, now, ticker)
-                except: continue
+                except: print(f"err cant get hist data for {ticker}"); continue
 
                 dTime = (now - txDate).days
                 avgDtime += dTime
@@ -320,10 +324,10 @@ class Trader:
         print(f"[BUY] Stock: {stock} bought for {budget} | balance before: {self.balance+budget} | balance after: {self.balance}")
 
         history = {
-                'stock':stock,
-                'ammBought':ammBought,
-                'balanceBefore':self.balance+budget,
-                'balanceAfter':self.balance
+                "stock":stock,
+                "ammBought":ammBought,
+                "balanceBefore":self.balance+budget,
+                "balanceAfter":self.balance
         }
         self.holdings.append({
             "stock" : stock,
@@ -345,10 +349,10 @@ class Trader:
 
                 print(f"[SELL] Stock: {stock} sold for {gained} | balance before: {self.balance-gained} | balance after: {self.balance}")
                 history = {
-                        'stock':stock,
-                        'gained':gained,
-                        'balanceBefore':self.balance  - gained,
-                        'balanceAfter':self.balance
+                        "stock":stock,
+                        "gained":gained,
+                        "balanceBefore":self.balance  - gained,
+                        "balanceAfter":self.balance
                 }
 
                 self.holdings.pop(self.holdings.index(i))
@@ -365,20 +369,22 @@ class Trader:
                 o = self.buyStock(transaction)
             else: 
                 o = self.sellStock(transaction)
+            if o != None:
+                self.history.append(o)
 
-                if o != None:
-                    self.history.append(o)
         self.txQueue.clear()
 
         return
 
     def scrape(self):
         ammPages = self.getData(1, ammPages=True)[0]
+        ammPages = 30
+
         for i in range(1,ammPages):
             res = self.getData(i)
             print(f"\t\tPage : {i} / avgDtime : {res[1]}")
 
-            if res[0] > 0 or res[1] >= self.maxAvgDtime: break
+            if res[0] > 0 or (res[1] >= self.maxAvgDtime and i > self.minPages): break
              
 
         if len(self.bet) > 0: self.pitch()
@@ -404,11 +410,15 @@ class Trader:
         return
 
     def saveSnapshot(self):
+
         if len(self.history) == 0: return
         now = time.time()
-        with open(SAVE_FILE, 'a') as f:
-            f.write("{" + f"{now}:" + str(self.history) + "},\n")
+
+        with open(HISTORY_FILE, 'a') as f:
+            json.dump({f'"{now}"':self.history}, f, indent=3)
+            f.write(",")
             f.close()
+
         self.history = []
 
 
