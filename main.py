@@ -366,8 +366,8 @@ class Trader:
             else: 
                 o = self.sellStock(transaction)
 
-            if o != None:
-                self.history.append(o)
+                if o != None:
+                    self.history.append(o)
         self.txQueue.clear()
 
         return
