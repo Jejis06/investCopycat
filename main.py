@@ -6,6 +6,7 @@ import yfinance as yf
 import copy
 import schedule
 import time 
+import argparse
 
 
 def make_hash(o):
@@ -25,6 +26,7 @@ def make_hash(o):
 
 
 SAVE_FILE = "db.json"
+HISTORY_FILE = "history.json"
 
 
 class Trader:
@@ -83,6 +85,9 @@ class Trader:
 
         # stocks waiting for confirmation
         self.bet = []
+
+        # history
+        self.history = []
 
         # how many days since the transaction is considered to be still valuable
         self.SAFE_TIMESPAN = {
@@ -306,13 +311,20 @@ class Trader:
         stock = transaction[0]['ticker']
         price = self.stockPrice(stock)
 
-        if stock in self.holdingsOnlyNames: return
+        if stock in self.holdingsOnlyNames: return None
 
         budget = self.balance * self.classifyAmm(transaction[0]['value'])
         ammBought = budget / price
         self.balance -= budget
 
         print(f"[BUY] Stock: {stock} bought for {budget} | balance before: {self.balance+budget} | balance after: {self.balance}")
+
+        history = {
+                'stock':stock,
+                'ammBought':ammBought,
+                'balanceBefore':self.balance+budget,
+                'balanceAfter':self.balance
+        }
         self.holdings.append({
             "stock" : stock,
             "ammBought": ammBought
@@ -320,7 +332,7 @@ class Trader:
         self.holdingsOnlyNames.append(stock)
         self.hashedHoldings.append(transaction[1][1])
 
-        return
+        return history
 
     def sellStock(self, transaction):
         stock = transaction[0]['ticker']
@@ -332,31 +344,37 @@ class Trader:
                 self.balance += gained
 
                 print(f"[SELL] Stock: {stock} sold for {gained} | balance before: {self.balance-gained} | balance after: {self.balance}")
+                history = {
+                        'stock':stock,
+                        'gained':gained,
+                        'balanceBefore':self.balance  - gained,
+                        'balanceAfter':self.balance
+                }
 
                 self.holdings.pop(self.holdings.index(i))
                 self.holdingsOnlyNames.pop(self.holdingsOnlyNames.index(stock))
-                break
+                return history
 
+        return None
 
-        return
 
     def commitTransactions(self):
         print(len(self.txQueue))
         for transaction in self.txQueue:
             if transaction[0]['txType'] == 'buy': 
-                self.buyStock(transaction)
+                o = self.buyStock(transaction)
             else: 
-                self.sellStock(transaction)
+                o = self.sellStock(transaction)
+
+            if o != None:
+                self.history.append(o)
         self.txQueue.clear()
 
         return
 
     def scrape(self):
         ammPages = self.getData(1, ammPages=True)[0]
-        ammPages = 50
         for i in range(1,ammPages):
-
-
             res = self.getData(i)
             print(f"\t\tPage : {i} / avgDtime : {res[1]}")
 
@@ -366,6 +384,8 @@ class Trader:
         if len(self.bet) > 0: self.pitch()
         print("commiting transactions : ")
         self.commitTransactions()
+        print("saving history snapshot")
+        self.saveSnapshot()
         print("saving")
         self.save()
         print(f"TODAYS BALANCE {self.balance}")
@@ -383,12 +403,29 @@ class Trader:
         self.scrape()
         return
 
+    def saveSnapshot(self):
+        if len(self.history) == 0: return
+        now = time.time()
+        with open(SAVE_FILE, 'a') as f:
+            f.write("{" + f"{now}:" + str(self.history) + "},\n")
+            f.close()
+        self.history = []
+
+
 
 
 def main():
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-t', '--test', action='store_true')
+    args = parser.parse_args().test
+
     os.system("clear")
     tr = Trader()
-    tr.timedRun("10:00")
+    if args == True:
+        tr.test()
+    else:
+        tr.timedRun("10:00")
 
     return
 
